@@ -1,34 +1,39 @@
 #include "server.h"
-using namespace std;
 
 HttpRequest::HttpRequest() {}
 
-void HttpRequest::string2header(std::string input)
+void HttpRequest::string2header(std::string input) // transform request string to header map
 {
-    istringstream iss(input);
+    std::istringstream iss(input);
     std::string state;
-    vector<std::string> state_list;
+    std::vector<std::string> state_list;
     getline(iss, state);
+    if(state.empty())
+    {
+        return;
+    }
+    state = state.erase(state.length()-1, 1);
     string_split(state, ' ', state_list);
     if(state_list.size() != 3)
     {
-        cout << "state error" << endl;
+        std::cout << "state error" << std::endl;
+        return;
     }
     method = state_list[0];
     url = state_list[1];
     ver = state_list[2];
-    cout << method << " " << url << " " << ver << endl;;
+    std::cout << method << " " << url << " " << ver << std::endl;;
 
     std::string token;
-    vector<std::string> token_list;
+    std::vector<std::string> token_list;
     while(getline(iss, token))
     {
         if(token.length() > 1)
         {
             string_split_first(token, ':', token_list);
             token_list[1].erase(token_list[1].begin());
-            request_header[token_list[0]] = token_list[1];
-            cout << "req header: " << token_list[0] << ": " << token_list[1] << endl;
+            request_header[token_list[0]] = token_list[1].erase(token_list[1].length()-1, 1);
+            std::cout << "req header: " << token_list[0] << ": " << token_list[1] << std::endl;
             token_list.clear();
             token.clear();
         }
@@ -37,17 +42,17 @@ void HttpRequest::string2header(std::string input)
 
 HttpResponse::HttpResponse() {}
 
-std::string HttpResponse::header2string(int file_type)
+std::string HttpResponse::header2string(int file_type) // transform header map to string
 {
     std::string blank = " ";
     std::string state_string = ver_res;// + blank + to_string(code) + blank + state + CRLF;
     state_string += blank;
-    state_string += to_string(code);
+    state_string += std::to_string(code);
     state_string += blank;
     state_string += state;
     state_string += CRLF;
-    cout << ver_res << " " << to_string(code) << " " << state << endl;
-    cout << state_string << endl;
+    std::cout << ver_res << " " << std::to_string(code) << " " << state << std::endl;
+    std::cout << state_string << std::endl;
     std::ostringstream oss;
     oss.str("");
 
@@ -58,34 +63,7 @@ std::string HttpResponse::header2string(int file_type)
     oss << CRLF;
     std::string oss_string = oss.str();
     return state_string + oss_string;
-//
-//    message_length =  header_length + body_length;
-//    char* message = new char[message_length + 4];
-//    if(file_type == HTML)
-//    {
-//        oss << body << CRLF;
-//        oss_string = oss.str();
-//        memcpy(message, (char*)(state_string + oss_string).data(), message_length);
-//    }
-//    else if(file_type == MP4)
-//    {
-//        memcpy(&(message[0]), (state_string + oss_string).data(), header_length);
-//        int count = 0;
-//        for(auto & i : send_queue)
-//        {
-//            count++;
-//            if(count == send_queue.size())
-//            {
-//                memcpy(&(message[header_length + video_buf_length*(count-1)+3]), i, video_buf_length+3);
-//            }
-//            else
-//            {
-//                memcpy(&(message[header_length + video_buf_length*(count-1)]), i, video_buf_length);
-//            }
-//        }
-//    }
 }
-
 
 Server::Server(int server_mode)
 {
@@ -97,18 +75,42 @@ Server::Server(int server_mode)
     STATE_CODE_MAP[404] = "Not Found";
 }
 
-
 int Server::set_socket()
 {
+    // init ssl
+
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    const SSL_METHOD* method = TLS_server_method();
+    ctx = SSL_CTX_new(method);
+    if(!ctx)
+    {
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+
+    // load certificate amd private key
+    std::string cert_path = ROOT_PATH + std::string("/keys/cacert.pem");
+    std::string privkey_path = ROOT_PATH + std::string("/keys/privkey.pem");
+    int cert_fp = SSL_CTX_use_certificate_file(ctx, cert_path.c_str(), SSL_FILETYPE_PEM);
+    int prikey_fp = SSL_CTX_use_PrivateKey_file(ctx, privkey_path.c_str(), SSL_FILETYPE_PEM);
+    bool key_check = SSL_CTX_check_private_key(ctx);
+    if (cert_fp <= 0 || prikey_fp <= 0 || !key_check)
+    {
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+
     s = socket(AF_INET, SOCK_STREAM, 0);
     int timeout = 10;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &timeout, sizeof(timeout));
     if(s == -1)
     {
-        cout <<"cannot open socket" << endl;
+        std::cout <<"cannot open socket" << std::endl;
         return -1;
     }
-    cout << "socket opened: " << s << endl;
+    std::cout << "socket opened: " << s << std::endl;
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -125,17 +127,17 @@ int Server::set_socket()
     int res = bind(s, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if(res == -1)
     {
-        cout << "bind failed" << endl;
+        std::cout << "bind failed" << std::endl;
         return -1;
     }
-    cout << "bind success: " << res << endl;
+    std::cout << "bind success: " << res << std::endl;
     int listen_res = listen(s, 10);
     if(listen_res == -1)
     {
-        cout << "listen failed" <<endl;
+        std::cout << "listen failed" << std::endl;
         return -1;
     }
-    cout << "listen client: " << listen_res << endl;
+    std::cout << "listen client: " << listen_res << std::endl;
     return 0;
 }
 
@@ -147,73 +149,72 @@ void Server::set_response_var(std::string type)
         response->response_header["Content-Type"] = "text/html";
         std::ifstream fd;
         std::string full_path = ROOT_PATH + request->url;
-        fd.open(full_path, ios::in);
+        fd.open(full_path, std::ios::in);
         fd.seekg(0, std::ifstream::end);
         int file_size =fd.tellg();
         fd.seekg(0, std::ifstream::beg);
-        response->response_header["Content-Length"] = to_string(file_size);
+        response->response_header["Content-Length"] = std::to_string(file_size);
         response->response_header["Connection"] = "keep-alive";
-        response->body_length = file_size;
+        response->body_length = file_size+3;
         char tmp = 0;
+        int count = 0;
+        char* tmp_body = new char[response->body_length];
         while ((tmp = fd.get())!=EOF)
         {
-            cout << tmp;
-            std::string tmp_s;
-            tmp_s.push_back(tmp);
-            //response->body += tmp_s;
+            std::cout << tmp;
+            memset(&(tmp_body[count]), tmp, 1);
+            count++;
         }
+        memset(&(tmp_body[count]), '\r', 1);
+        memset(&(tmp_body[count+1]), '\n', 1);
+        memset(&(tmp_body[count+2]), '\0', 1);
+        response->send_queue.push_back(tmp_body);
         fd.close();
     }
     else if(type == "mp4")
     {
         send_type = MP4;
         std::string full_path = std::string(ROOT_PATH) + request->url; // path in server
-        cout << full_path << endl;
+        std::cout << full_path << std::endl;
 
         FILE* video_fp;
         if((video_fp = fopen(full_path.c_str(), "rb")) == NULL)
         {
-            cout << "open error" << endl;
+            std::cout << "open error" << std::endl;
             exit(-1);
         }
         fseek(video_fp, 0, SEEK_END);
         int video_length = ftell(video_fp);
 
-        // int video_fd = open(full_path.c_str(), ios::in|ios::binary); // open video in read-only mode
         response->response_header["Content-Type"] = "video/mpeg";
         response->response_header["Accept-Ranges"] = "bytes";
         response->response_header["Connection"] = "keep-alive";
-        //response->response_header["Transfer-Encoding"] = "chunked";
+        //response->response_header["Transfer-Encoding"] = "chunked"; // conflict with Content-Length
         response->response_header["Content-Length"] = std::to_string(video_length);
 
         if(response->code == 200)
         {
-            //char video_buf[BUF_SIZE];
             while(true)
             {
-                cout << "received 200 code" << endl;
+                std::cout << "received 200 code" << std::endl;
                 break;
             }
-//            while(read(video_fd, video_buf, sizeof(video_buf)))
-//            {
-//                response->body += video_buf;
-//            }
         }
         else
         {
             int range_length = request->request_header["Range"].length();
-            std::string request_range = request->request_header["Range"].substr(6, range_length-7);
+            std::string request_range = request->request_header["Range"].substr(6, range_length-6);
             int hyphen_pos = request_range.find("-");
             std::string start_string = request_range.substr(0, hyphen_pos);
             std::string end_string = "";
-            cout << "hyphen pos " << hyphen_pos << " " << request_range.length() << endl;
+            // cout << "hyphen pos " << hyphen_pos << " " << request_range.length() << endl;
             if(hyphen_pos != request_range.length()-1)
             {
                 end_string = request_range.substr(hyphen_pos+1);
             }
             long start_addr = -1, end_addr = -1;
-            cout << "range " << request_range << endl;
-            cout << start_string.empty() << " " << end_string.empty() << endl;
+            std::cout << "range " << request_range << std::endl;
+            std::cout << start_string.empty() << " " << end_string.empty() << std::endl;
             if(!start_string.empty() && end_string.empty()) // x-
             {
                 start_addr = stol(start_string);
@@ -231,17 +232,17 @@ void Server::set_response_var(std::string type)
             }
             else
             {
-                cout << "range error" << endl;
+                std::cout << "range error" << std::endl;
                 return;
             }
             long read_length = end_addr - start_addr + 1;
             response->body_length = read_length+3;
 
-            ostringstream content_range;
+            std::ostringstream content_range;
             content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
-            response->response_header["Content-Length"] = to_string(read_length);
+            response->response_header["Content-Length"] = std::to_string(read_length);
             response->response_header["Content-Range"] = content_range.str();
-            cout << "reading: " << start_addr << " to " << end_addr << endl;
+            std::cout << "reading: " << start_addr << " to " << end_addr << std::endl;
             int send_count = read_length / video_buf_length + 1;
 
             while (true)
@@ -271,75 +272,7 @@ void Server::set_response_var(std::string type)
                 }
             }
             fseek(video_fp, 0, SEEK_END);
-
-//            while(read_length > video_buf_length)
-//            {
-//                end_addr = start_addr + video_buf_length;
-//                content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
-//                response->response_header["Content-Length"] = to_string(video_buf_length);
-//                cout << "reading: " << start_addr << " to " << end_addr << endl;
-//                response->body_length = video_buf_length+3;
-//
-//                fseek(video_fp, start_addr, SEEK_SET);
-//                char video_buf[video_buf_length];
-//                fread(video_buf, 1, video_buf_length, video_fp);
-//                memcpy(&(response->video_body[0]), video_buf, video_buf_length);
-//                memcpy(&(response->body[0]), &(response->video_body[0]), video_buf_length+3);
-//
-//
-//                start_addr += 4096;
-//                read_length -= 4096;
-//            }
-//            end_addr = video_length - 1;
-//            content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
-//            response->response_header["Content-Length"] = to_string(video_buf_length);
-//            cout << "reading: " << start_addr << " to " << end_addr << endl;
-//            response->body_length = video_buf_length+3;
-//
-//            if(read_length > video_buf_length)
-//            {
-//                end_addr = start_addr + video_buf_length;
-//                content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
-//                response->response_header["Content-Length"] = to_string(video_buf_length);
-//                cout << "reading: " << start_addr << " to " << end_addr << endl;
-//                response->body_length = video_buf_length+3;
-//            }
-//            else
-//            {
-//                content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
-//                response->response_header["Content-Length"] = std::to_string(read_length);
-//                cout << "reading: " << start_addr << " to " << end_addr << endl;
-//                response->body_length = read_length+3;
-//            }
-//            response->response_header["Content-Range"] = content_range.str();
-//
-//            fseek(video_fp, start_addr, SEEK_SET);
-//            char video_buf[video_buf_length];
-//            fread(video_buf, 1, video_buf_length, video_fp);
-//            memcpy(&(response->video_body[0]), video_buf, video_buf_length);
-//            memset(&(response->video_body[video_buf_length]), '\r', 1);
-//            memset(&(response->video_body[video_buf_length+1]), '\n', 1);
-//            memset(&(response->video_body[video_buf_length+2]), '\0', 1);
-//            memcpy(&(response->body[0]), &(response->video_body[0]), video_buf_length+3);
-
-            // read video
-//            lseek(video_fd, start_addr, SEEK_SET);
-//            char* video_buf = new char[1000];
-//            int test = read(video_fd, video_buf, 999);
-//            video_buf[999] = '\0';
-//            cout << "buf:" << test << endl;
-//            std::string video_string = video_buf;
-//            response->body = video_string;
-//            fseek(video_fp, start_addr, SEEK_SET);
-//            char video_buf[video_buf_length];
-//            fread(video_buf, 1, video_buf_length, video_fp);
-//            memcpy(&(response->video_body[0]), video_buf, video_buf_length);
-//            memset(&(response->video_body[video_buf_length]), '\r', 1);
-//            memset(&(response->video_body[video_buf_length+1]), '\n', 1);
-//            memset(&(response->video_body[video_buf_length+2]), '\0', 1);
-//            memcpy(&(response->body[0]), &(response->video_body[0]), video_buf_length+3);
         }
-        //fclose(video_fp);
     }
 }
 
@@ -349,57 +282,86 @@ void Server::accept_request()
     request = new HttpRequest;
     struct sockaddr_in client_addr;
     int len = sizeof(client_addr);
-    int client_fd = accept(s, (struct sockaddr*)&client_addr, (socklen_t*)&len); //blocked waiting
+    int client_fd = accept(s, (struct sockaddr*)&client_addr, (socklen_t*)&len); // blocked waiting
+    // std::cout << errno << std::endl;
     if(client_fd == -1)
     {
+        close(client_fd);
+        delete request;
+        delete response;
         return;
     }
-    // cout << client_fd << endl;
     char* ip = inet_ntoa(client_addr.sin_addr);
-    cout << "connect to " << ip << endl;
+    std::cout << "connect to " << ip << std::endl;
+    SSL* ssl = SSL_new(ctx);
     memset(buf, 0, BUF_SIZE);
-    int size = read(client_fd, buf, sizeof(buf));
+    if(mode == HTTP_MODE)
+    {
+         int size = read(client_fd, buf, sizeof(buf));
+    }
+    else
+    {
+        SSL_set_fd(ssl, client_fd);
+        if (SSL_accept(ssl) <= 0)
+        {
+            ERR_print_errors_fp(stderr);
+        }
+        int size = SSL_read(ssl, buf, BUF_SIZE);
+    }
     request->string2header(buf);
-    response->ver_res = request->ver;
-    cout << "url " << request->url << endl;
-    cout << "path " << ROOT_PATH + request->url << endl;
-    cout << "access " << access((ROOT_PATH + request->url).c_str(), F_OK) << endl;
+    response-> ver_res = request->ver;
 
+    std::cout << "url " << request->url << std::endl;
+    std::cout << "path " << ROOT_PATH + request->url << std::endl;
+    std::cout << "access " << access((ROOT_PATH + request->url).c_str(), F_OK) << std::endl;
+
+    err_flag = false;
+    redirect_flag = false;
     if(access((ROOT_PATH + request->url).c_str(), F_OK) < 0)
     {
-        cout << "Not Found" << endl;
+        std::cout << "Not Found" << std::endl;
         response->code = 404;
+        err_flag = true;
     }
     else if(access((ROOT_PATH + request->url).c_str(), R_OK) < 0)
     {
-        cout << "Forbidden" << endl;
+        std::cout << "Forbidden" << std::endl;
         response->code = 403;
+        err_flag = true;
     }
-//    else if(mode == HTTP_MODE) // turn to https, not complemented yet
-//    {
-//
-//    }
-
+    else if(mode == HTTP_MODE) // turn to https, not complemented yet
+    {
+        std::cout << "Moved Permanently" << std::endl;
+        response->code = 301;
+        response->response_header["Content-Type"] = "text/html";
+        response->response_header["Connection"] = "keep-alive";
+        std::string location = "https://";
+        location += ip;
+        location += request->url;
+        response->response_header["Location"] = location;
+        redirect_flag = true;
+    }
     else
     {
         int dot_pos = request->url.find(".");
-        if(dot_pos == string::npos)
+        if(dot_pos == std::string::npos)
         {
-            cout << "Not Found" << endl;
+            std::cout << "Not Found" << std::endl;
             response->code = 404;
+            err_flag = true;
         }
         else
         {
             std::string file_type = request->url.substr(dot_pos+1, request->url.length()-dot_pos);
-            cout << file_type << " file will transmit to client" << endl;
+            std::cout << file_type << " file will transmit to client" << std::endl;
             if(file_type == "mp4" && request->request_header.find("Range") != response->response_header.end())
             {
-                cout << "Partial Content" << endl;
+                std::cout << "Partial Content" << std::endl;
                 response->code = 206;
             }
             else
             {
-                cout << "OK" << endl;
+                std::cout << "OK" << std::endl;
                 response->code = 200;
             }
 
@@ -409,28 +371,63 @@ void Server::accept_request()
     response->state = STATE_CODE_MAP[response->code];
     response->ver_res = "HTTP/1.1";
     std::string message = response->header2string(send_type);
-    send(client_fd, message.c_str(), message.length(), MSG_WAITALL);
-    int count = 0;
-    ulong data_length = 0;
-    for(auto it=response->send_queue.begin(); it!=response->send_queue.end(); it++)
+    if(send_type == HTML) // a confusing bug
     {
-        if(count++ == response->send_queue.size())
-        {
-            data_length = (response->body_length-3) % video_buf_length + 3;
-        }
-        else
-        {
-            data_length = video_buf_length;
-        }
-        char* data = new char[data_length];
-        memcpy(data, (*it), data_length);
-        send(client_fd, data, data_length, MSG_WAITALL);
-        delete [] data;
+        message += CRLF;
     }
 
 
-    //close(client_fd);
-
+    if(redirect_flag)
+    {
+        send(client_fd, message.c_str(), message.length(), MSG_WAITALL);
+        std::cout << "redirect" << std::endl;
+        std::cout << message << std::endl;
+        return;
+    }
+    SSL_write(ssl, message.c_str(), message.length());
+    if(send_type == MP4)
+    {
+        int count = 0;
+        ulong data_length = 0;
+        for(auto it=response->send_queue.begin(); it!=response->send_queue.end(); it++)
+        {
+            if(count++ == response->send_queue.size())
+            {
+                data_length = (response->body_length-3) % video_buf_length + 3;
+            }
+            else
+            {
+                data_length = video_buf_length;
+            }
+            char* data = new char[data_length];
+            memcpy(data, (*it), data_length);
+            int error_code = -1;
+            //error_code = send(client_fd, data, data_length, MSG_DONTWAIT);
+            error_code = SSL_write(ssl, data, data_length);
+            // std::cout << "packet: " << std::to_string(count) << " error code:" << error_code << std::endl;
+            delete [] data;
+        }
+    }
+    else if(send_type == HTML)
+    {
+        if(!response->send_queue.empty())
+        {
+            // send(client_fd, response->send_queue[0], response->body_length, MSG_WAITALL);
+            SSL_write(ssl, response->send_queue[0], response->body_length);
+        }
+    }
+    else
+    {
+        std::string err_message = "file type don't supported";
+        err_message += "\r\n";
+        // send(client_fd, err_message.data(), err_message.length(), MSG_WAITALL);
+        SSL_write(ssl, err_message.data(), err_message.length());
+    }
+    response->send_queue.clear();
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    close(client_fd);
+    // SSL_CTX_free(ctx);
     delete request;
     delete response;
 }
@@ -465,41 +462,3 @@ void string_split_first(const std::string& str1, const char split1, std::vector<
         res1.push_back(tmp1);
     }
 }
-//void Server::pack_response() // pack header and information, then send to client
-//{
-//    response->send_message = "";
-//    response->send_message += "HTTP/1.1 200 OK\r\n";
-////    response->send_message += "Content-Type:text/html\r\n\r\n";
-//
-//    response->send_message += "Content-Type:video/mpeg\r\n";
-//    //response->send_message += "<html><head>Hello World</head></html>\r\n";
-//
-//    //for video
-//    int video_fd = open("1.mp4", O_RDONLY);
-//    int video_length = lseek(video_fd, 0, SEEK_END)- lseek(video_fd, 0, SEEK_SET);
-////    response += "Content-Length:";
-////    response += to_string(video_length);
-//    response->send_message += "\r\n";
-//    cout << response->send_message << endl;
-//    char video_buf[BUF_SIZE];
-//    if (read(video_fd, video_buf, sizeof(video_buf)))
-//    {
-//        response->send_message += video_buf;
-//    }
-//    response->send_message += "\r\n";
-////    // for text
-////    ifstream fd;
-////    fd.open("index.html", ios::in);
-////    char tmp = 0;
-////    while ((tmp = fd.get())!=EOF)
-////    {
-////        string tmp_s;
-////        tmp_s.push_back(tmp);
-////        response->send_message += tmp_s;
-////    }
-////    response->send_message += "\r\n";
-////    cout << "r" << response->send_message << endl;
-//
-//}
-
-

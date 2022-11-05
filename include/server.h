@@ -3,10 +3,12 @@
 
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
-#include <pthread.h>
 #include <unistd.h>
 #include <fcntl.h>
+
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -16,6 +18,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <thread>
 #include <iostream>
 
 #define HTTP_MODE 0
@@ -63,24 +66,25 @@ public:
     Server(int server_mode);
 	~Server();
 	int set_socket();
-    int stop_flag = 0;
 	void accept_request();
     std::map<int, std::string> STATE_CODE_MAP;
     int send_type = HTML;
 private:
+    SSL_CTX* ctx;
     HttpResponse* response;
     HttpRequest* request;
 
     struct sockaddr_in server_addr;
     void set_response_var(std::string type);
 
-    // void pack_response()
-
 	int http_port = 80;
     int https_port = 443;
-    int mode = HTTP_MODE;
+    int mode = HTTPS_MODE;
     int s = -1;
     char buf[BUF_SIZE];
+
+    bool err_flag = false;
+    bool redirect_flag = false;
 
 };
 void string_split(const std::string& str, const char split, std::vector<std::string>& res);
