@@ -5,7 +5,6 @@
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -19,7 +18,10 @@
 #include <sstream>
 #include <vector>
 #include <thread>
+#include <csignal>
 #include <iostream>
+
+#include "logger.h"
 
 #define HTTP_MODE 0
 #define HTTPS_MODE 1
@@ -28,7 +30,8 @@
 #define BUF_SIZE 4096
 #define CRLF "\r\n"
 #define ROOT_PATH "/home/mininet/Simple-HTTP-Server/test"
-const long video_buf_length = 4096;//4096;
+const long video_buf_length = 4096;
+
 class HttpRequest
 {
 public:

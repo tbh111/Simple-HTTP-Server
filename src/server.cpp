@@ -16,13 +16,13 @@ void HttpRequest::string2header(std::string input) // transform request string t
     string_split(state, ' ', state_list);
     if(state_list.size() != 3)
     {
-        std::cout << "state error" << std::endl;
+        logging::ERROR("request state error");
         return;
     }
     method = state_list[0];
     url = state_list[1];
     ver = state_list[2];
-    std::cout << method << " " << url << " " << ver << std::endl;;
+    logging::DEBUG(method + " " + url + " " + ver);
 
     std::string token;
     std::vector<std::string> token_list;
@@ -33,7 +33,7 @@ void HttpRequest::string2header(std::string input) // transform request string t
             string_split_first(token, ':', token_list);
             token_list[1].erase(token_list[1].begin());
             request_header[token_list[0]] = token_list[1].erase(token_list[1].length()-1, 1);
-            std::cout << "req header: " << token_list[0] << ": " << token_list[1] << std::endl;
+            logging::DEBUG("req header: " + token_list[0] + ": " + token_list[1]);
             token_list.clear();
             token.clear();
         }
@@ -51,8 +51,9 @@ std::string HttpResponse::header2string(int file_type) // transform header map t
     state_string += blank;
     state_string += state;
     state_string += CRLF;
-    std::cout << ver_res << " " << std::to_string(code) << " " << state << std::endl;
-    std::cout << state_string << std::endl;
+    // std::cout << ver_res << " " << std::to_string(code) << " " << state << std::endl;
+    // std::cout << state_string << std::endl;
+    logging::DEBUG("send response: \n" + state_string);
     std::ostringstream oss;
     oss.str("");
 
@@ -107,10 +108,10 @@ int Server::set_socket()
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &timeout, sizeof(timeout));
     if(s == -1)
     {
-        std::cout <<"cannot open socket" << std::endl;
+        logging::ERROR("cannot open socket");
         return -1;
     }
-    std::cout << "socket opened: " << s << std::endl;
+    logging::INFO("socket opened: " + std::to_string(s));
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -127,17 +128,17 @@ int Server::set_socket()
     int res = bind(s, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if(res == -1)
     {
-        std::cout << "bind failed" << std::endl;
+        logging::ERROR("bind failed");
         return -1;
     }
-    std::cout << "bind success: " << res << std::endl;
+    logging::INFO("bind success");
     int listen_res = listen(s, 10);
     if(listen_res == -1)
     {
-        std::cout << "listen failed" << std::endl;
+        logging::ERROR("listen failed");
         return -1;
     }
-    std::cout << "listen client: " << listen_res << std::endl;
+    logging::INFO("listen client");
     return 0;
 }
 
@@ -161,7 +162,7 @@ void Server::set_response_var(std::string type)
         char* tmp_body = new char[response->body_length];
         while ((tmp = fd.get())!=EOF)
         {
-            std::cout << tmp;
+            // std::cout << tmp;
             memset(&(tmp_body[count]), tmp, 1);
             count++;
         }
@@ -175,12 +176,12 @@ void Server::set_response_var(std::string type)
     {
         send_type = MP4;
         std::string full_path = std::string(ROOT_PATH) + request->url; // path in server
-        std::cout << full_path << std::endl;
+        logging::INFO("mp4 path: " + full_path);
 
         FILE* video_fp;
         if((video_fp = fopen(full_path.c_str(), "rb")) == NULL)
         {
-            std::cout << "open error" << std::endl;
+            logging::ERROR("open mp4 error");
             exit(-1);
         }
         fseek(video_fp, 0, SEEK_END);
@@ -196,7 +197,7 @@ void Server::set_response_var(std::string type)
         {
             while(true)
             {
-                std::cout << "received 200 code" << std::endl;
+                logging::DEBUG("received 200 code");
                 break;
             }
         }
@@ -208,13 +209,15 @@ void Server::set_response_var(std::string type)
             std::string start_string = request_range.substr(0, hyphen_pos);
             std::string end_string = "";
             // cout << "hyphen pos " << hyphen_pos << " " << request_range.length() << endl;
+            logging::DEBUG("hyphen pos " + std::to_string(hyphen_pos) + " " +
+                            std::to_string(request_range.length()));
             if(hyphen_pos != request_range.length()-1)
             {
                 end_string = request_range.substr(hyphen_pos+1);
             }
             long start_addr = -1, end_addr = -1;
-            std::cout << "range " << request_range << std::endl;
-            std::cout << start_string.empty() << " " << end_string.empty() << std::endl;
+            logging::DEBUG("range " + request_range);
+
             if(!start_string.empty() && end_string.empty()) // x-
             {
                 start_addr = stol(start_string);
@@ -232,7 +235,7 @@ void Server::set_response_var(std::string type)
             }
             else
             {
-                std::cout << "range error" << std::endl;
+                logging::ERROR("range error");
                 return;
             }
             long read_length = end_addr - start_addr + 1;
@@ -242,7 +245,8 @@ void Server::set_response_var(std::string type)
             content_range << "bytes " << start_addr << "-" << end_addr << "/" << video_length;
             response->response_header["Content-Length"] = std::to_string(read_length);
             response->response_header["Content-Range"] = content_range.str();
-            std::cout << "reading: " << start_addr << " to " << end_addr << std::endl;
+            // std::cout << "reading: " << start_addr << " to " << end_addr << std::endl;
+            logging::DEBUG("reading: " + std::to_string(start_addr) + " to " + std::to_string(end_addr));
             int send_count = read_length / video_buf_length + 1;
 
             while (true)
@@ -292,7 +296,9 @@ void Server::accept_request()
         return;
     }
     char* ip = inet_ntoa(client_addr.sin_addr);
-    std::cout << "connect to " << ip << std::endl;
+    std::string ip_str = ip;
+    logging::INFO("connect to " + ip_str);
+
     SSL* ssl = SSL_new(ctx);
     memset(buf, 0, BUF_SIZE);
     if(mode == HTTP_MODE)
@@ -311,27 +317,29 @@ void Server::accept_request()
     request->string2header(buf);
     response-> ver_res = request->ver;
 
-    std::cout << "url " << request->url << std::endl;
-    std::cout << "path " << ROOT_PATH + request->url << std::endl;
-    std::cout << "access " << access((ROOT_PATH + request->url).c_str(), F_OK) << std::endl;
+//    std::cout << "url " << request->url << std::endl;
+//    std::cout << "path " << ROOT_PATH + request->url << std::endl;
+//    std::cout << "access " << access((ROOT_PATH + request->url).c_str(), F_OK) << std::endl;
+    logging::DEBUG("url " + request->url);
+    logging::DEBUG("access " + std::to_string(access((ROOT_PATH + request->url).c_str(), F_OK)));
 
     err_flag = false;
     redirect_flag = false;
     if(access((ROOT_PATH + request->url).c_str(), F_OK) < 0)
     {
-        std::cout << "Not Found" << std::endl;
+        logging::WARN("Not found");
         response->code = 404;
         err_flag = true;
     }
     else if(access((ROOT_PATH + request->url).c_str(), R_OK) < 0)
     {
-        std::cout << "Forbidden" << std::endl;
+        logging::WARN("Forbidden");
         response->code = 403;
         err_flag = true;
     }
     else if(mode == HTTP_MODE) // turn to https, not complemented yet
     {
-        std::cout << "Moved Permanently" << std::endl;
+        logging::INFO("Moved Permanently");
         response->code = 301;
         response->response_header["Content-Type"] = "text/html";
         response->response_header["Connection"] = "keep-alive";
@@ -346,22 +354,22 @@ void Server::accept_request()
         int dot_pos = request->url.find(".");
         if(dot_pos == std::string::npos)
         {
-            std::cout << "Not Found" << std::endl;
+            logging::WARN("Not found: url don't have file type");
             response->code = 404;
             err_flag = true;
         }
         else
         {
             std::string file_type = request->url.substr(dot_pos+1, request->url.length()-dot_pos);
-            std::cout << file_type << " file will transmit to client" << std::endl;
+            logging::INFO(file_type + " file will transmit to client");
             if(file_type == "mp4" && request->request_header.find("Range") != response->response_header.end())
             {
-                std::cout << "Partial Content" << std::endl;
+                logging::INFO("Partial Content");
                 response->code = 206;
             }
             else
             {
-                std::cout << "OK" << std::endl;
+                logging::INFO("OK");
                 response->code = 200;
             }
 
@@ -376,12 +384,21 @@ void Server::accept_request()
         message += CRLF;
     }
 
-
     if(redirect_flag)
     {
         send(client_fd, message.c_str(), message.length(), MSG_WAITALL);
-        std::cout << "redirect" << std::endl;
-        std::cout << message << std::endl;
+        logging::DEBUG("Redirect\n" + message);
+        return;
+    }
+    logging::DEBUG(message);
+
+    if(err_flag)
+    {
+        logging::WARN("error occurred, connection close");
+        SSL_free(ssl);
+        close(client_fd);
+        delete request;
+        delete response;
         return;
     }
     SSL_write(ssl, message.c_str(), message.length());
@@ -424,7 +441,16 @@ void Server::accept_request()
         SSL_write(ssl, err_message.data(), err_message.length());
     }
     response->send_queue.clear();
-    SSL_shutdown(ssl);
+
+    if(SSL_get_shutdown(ssl) & SSL_SENT_SHUTDOWN)
+    {
+        logging::WARN("SSL shutdown ignored");
+    }
+    else
+    {
+        SSL_shutdown(ssl);
+    }
+
     SSL_free(ssl);
     close(client_fd);
     // SSL_CTX_free(ctx);
